@@ -10,13 +10,19 @@ import com.fasterxml.jackson.annotation.JsonValue;
  */
 public enum Currency {
 
-  /** United States Dollar. */
+  /**
+   * United States Dollar.
+   */
   USD,
 
-  /** Euro. */
+  /**
+   * Euro.
+   */
   EUR,
 
-  /** British Pound Sterling. */
+  /**
+   * British Pound Sterling.
+   */
   GBP;
 
   /**

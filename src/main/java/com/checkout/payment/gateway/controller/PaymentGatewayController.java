@@ -66,11 +66,9 @@ public class PaymentGatewayController {
    * @return ResponseEntity containing the payment result with HTTP 201 CREATED
    */
   @PostMapping("/payment")
-  public ResponseEntity<PaymentResponse> postPayment(
-      @RequestHeader("Idempotency-Key") String idempotencyKey,
+  public ResponseEntity<PaymentResponse> postPayment(@RequestHeader("Idempotency-Key") String idempotencyKey,
       @RequestBody @Valid CreatePaymentRequest createPaymentRequest) {
-    PaymentResponse response = paymentGatewayService.processPayment(createPaymentRequest,
-        idempotencyKey);
+    PaymentResponse response = paymentGatewayService.processPayment(createPaymentRequest, idempotencyKey);
     return ResponseEntity.status(HttpStatus.CREATED).body(response);
   }
 }

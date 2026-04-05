@@ -10,7 +10,7 @@ import com.checkout.payment.gateway.mapper.PaymentMapper;
 import com.checkout.payment.gateway.model.api.CreatePaymentRequest;
 import com.checkout.payment.gateway.model.api.PaymentResponse;
 import com.checkout.payment.gateway.repository.PaymentsRepository;
-import java.util.Optional;
+import java.time.YearMonth;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -58,18 +58,26 @@ public class PaymentGatewayService {
    * @return The payment response.
    */
   public PaymentResponse processPayment(CreatePaymentRequest request, String idempotencyKey) {
-
     if (idempotencyKey == null || idempotencyKey.isBlank()) {
       throw new IllegalArgumentException("Idempotency key is required");
     }
 
-    Payment finalPayment = paymentsRepository.process(idempotencyKey, () -> {
+    if (YearMonth.of(request.getExpiryYear(), request.getExpiryMonth()).isBefore(YearMonth.now())) {
+      return PaymentResponse.rejected("Card expired", request);
+    }
 
-      // Step 1: 构建 payment
+    try {
+      Currency.from(request.getCurrency());
+    } catch (Exception e) {
+      return PaymentResponse.rejected("Unsupported currency", request);
+    }
+
+    Payment finalPayment = paymentsRepository.process(idempotencyKey, () -> {
+      // Step 1: build payment
       Payment payment = PaymentMapper.toDomain(request);
 
       try {
-        // Step 2: 调 bank
+        // Step 2: call bank
         BankResponse bankResponse = bankClient.authorize(
             request.getCardNumber(),
             request.getCvv(),
@@ -79,7 +87,7 @@ public class PaymentGatewayService {
             Currency.from(request.getCurrency())
         );
 
-        // Step 3: 状态
+        // Step 3: status check
         PaymentStatus status = bankResponse.isAuthorized()
             ? PaymentStatus.AUTHORIZED
             : PaymentStatus.DECLINED;

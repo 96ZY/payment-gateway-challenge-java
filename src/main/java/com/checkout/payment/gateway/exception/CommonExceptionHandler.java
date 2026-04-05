@@ -1,6 +1,6 @@
 package com.checkout.payment.gateway.exception;
 
-import com.checkout.payment.gateway.model.ErrorResponse;
+import com.checkout.payment.gateway.model.api.ErrorResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -13,8 +13,8 @@ import java.util.stream.Collectors;
 /**
  * Global exception handler for the application.
  * <p>
- * Converts exceptions into standardized HTTP responses with {@link ErrorResponse}.
- * Handles both business logic exceptions and validation errors.
+ * Converts exceptions into standardized HTTP responses with {@link ErrorResponse}. Handles both
+ * business logic exceptions and validation errors.
  */
 @ControllerAdvice
 public class CommonExceptionHandler {

@@ -1,4 +1,6 @@
-package com.checkout.payment.gateway.model;
+package com.checkout.payment.gateway.model.api;
+
+import lombok.Getter;
 
 /**
  * Standard error response payload for API errors.
@@ -6,9 +8,14 @@ package com.checkout.payment.gateway.model;
  * Used by {@link com.checkout.payment.gateway.exception.CommonExceptionHandler}
  * to return consistent error messages to API clients.
  */
+@Getter
 public class ErrorResponse {
 
-  /** Error message describing what went wrong. */
+  /** Error message describing what went wrong.
+   * -- GETTER --
+   *  Returns the error message.
+   *
+   */
   private final String message;
 
   /**
@@ -18,15 +25,6 @@ public class ErrorResponse {
    */
   public ErrorResponse(String message) {
     this.message = message;
-  }
-
-  /**
-   * Returns the error message.
-   *
-   * @return the error message
-   */
-  public String getMessage() {
-    return message;
   }
 
   /**

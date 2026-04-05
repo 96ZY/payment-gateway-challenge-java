@@ -12,6 +12,9 @@ public class CardUtil {
    * @return The last four digits of the card number.
    */
   public static String getLastFourDigits(String cardNumber) {
+    if (cardNumber == null || cardNumber.length() < 4) {
+      return "";
+    }
     return cardNumber.substring(cardNumber.length() - 4);
   }
 }

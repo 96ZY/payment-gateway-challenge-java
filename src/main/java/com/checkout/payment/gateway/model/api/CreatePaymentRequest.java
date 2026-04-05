@@ -1,7 +1,5 @@
 package com.checkout.payment.gateway.model.api;
 
-import com.checkout.payment.gateway.validation.ValidCurrency;
-import com.checkout.payment.gateway.validation.ValidExpiryDate;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.*;
 import lombok.Data;
@@ -18,7 +16,6 @@ import lombok.Data;
  *   <li>Currency: must be a supported currency code</li>
  * </ul>
  */
-@ValidExpiryDate
 @Data
 public class CreatePaymentRequest {
 
@@ -43,7 +40,6 @@ public class CreatePaymentRequest {
   /** Currency code (e.g., "USD", "GBP", "EUR"). */
   @JsonProperty("currency")
   @NotNull
-  @ValidCurrency
   private String currency;
 
   /** Amount in minor units (e.g., cents for USD). Must be positive. */

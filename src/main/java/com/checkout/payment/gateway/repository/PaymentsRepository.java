@@ -1,60 +1,187 @@
 package com.checkout.payment.gateway.repository;
 
 import com.checkout.payment.gateway.domain.Payment;
+import org.springframework.stereotype.Repository;
 
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 
-import org.springframework.stereotype.Repository;
-
 /**
- * In-memory repository for storing and retrieving payments.
+ * An in-memory idempotency mechanism that ensures
+ * in-flight request deduplication using ConcurrentHashMap and CompletableFuture.
  * <p>
- * Uses {@link ConcurrentHashMap} for thread-safe operations. Supports idempotency by storing
- * payments against idempotency keys.
+ * Key properties:
+ * - Only one in-flight execution per idempotency key
+ * - Concurrent callers share the same computation result
+ * - Avoids explicit locking via CAS-based coordination
+ * <p>
+ * Limitations:
+ * - Only suitable for single-instance deployments
+ * - Does not guarantee strict idempotency across time
+ * - Does not cancel underlying execution on timeout
  */
 @Repository
 public class PaymentsRepository {
 
   /**
-   * Map for payment storage: payment ID → Payment.
+   * Stores successfully processed payments by their ID.
    */
   private final Map<UUID, Payment> payments = new ConcurrentHashMap<>();
 
+  /**
+   * Tracks in-flight requests for idempotency. Key -> ongoing computation result
+   * (CompletableFuture)
+   */
   private final Map<String, CompletableFuture<Payment>> idempotencyMap = new ConcurrentHashMap<>();
 
   /**
-   * Retrieves a payment by its unique ID.
+   * Timeout for processing a payment (to avoid indefinite blocking).
+   */
+  private static final long TIMEOUT_MS = 3000;
+
+  /**
+   * Retrieves a previously processed payment by its unique ID.
+   * <p>
+   * This is a simple read operation backed by ConcurrentHashMap,
+   * providing thread-safe and efficient concurrent access with O(1) lookup.
    *
-   * @param id the payment UUID
-   * @return Optional containing the payment if found, empty otherwise
+   * @param id the unique identifier of the payment
+   * @return an Optional containing the payment if present, otherwise empty
    */
   public Optional<Payment> get(UUID id) {
     return Optional.ofNullable(payments.get(id));
   }
 
+  /**
+   * Processes a payment request with in-flight idempotency guarantees.
+   *
+   * <p>This method ensures that for a given idempotency key:
+   * <ul>
+   *   <li>Only one thread (the "owner") performs the computation</li>
+   *   <li>Concurrent callers reuse the same in-flight result</li>
+   *   <li>No explicit locking is used (CAS-based coordination via ConcurrentHashMap)</li>
+   * </ul>
+   *
+   * <p><b>Execution model:</b>
+   * <ul>
+   *   <li>The first thread installs a new CompletableFuture via {@code putIfAbsent}</li>
+   *   <li>This thread executes the supplier and completes the future</li>
+   *   <li>Other threads observe the existing future and wait via {@code join()}</li>
+   * </ul>
+   *
+   * <p><b>Concurrency guarantees:</b>
+   * <ul>
+   *   <li>At most one execution per key at any given time (in-flight deduplication)</li>
+   *   <li>Memory visibility is ensured by the happens-before relationship between
+   *       {@code complete()} and {@code join()}</li>
+   * </ul>
+   *
+   * <p><b>Timeout behavior:</b>
+   * <ul>
+   *   <li>Waiting threads time out after {@code TIMEOUT_MS}</li>
+   *   <li>Timeout does <b>not</b> cancel or interrupt the underlying execution</li>
+   *   <li>The owner thread may still complete successfully after timeout</li>
+   * </ul>
+   *
+   * <p><b>Trade-offs:</b>
+   * <ul>
+   *   <li>Does not guarantee strict idempotency across time (due to key removal)</li>
+   *   <li>May re-execute after completion if a new request arrives</li>
+   *   <li>Suitable for single-instance deployments only</li>
+   * </ul>
+   *
+   * @param key       idempotency key identifying the request
+   * @param supplier  computation that produces the payment result
+   * @return the processed payment
+   * @throws RuntimeException if execution fails or times out
+   */
   public Payment process(String key, Supplier<Payment> supplier) {
-    CompletableFuture<Payment> future = new CompletableFuture<>();
-
-    CompletableFuture<Payment> existing = idempotencyMap.putIfAbsent(key, future);
-
-    if (existing != null) {
-      return existing.join();
+    // Fail-fast validation
+    if (key == null || supplier == null) {
+      throw new IllegalArgumentException("key and supplier must not be null");
     }
 
+
+    // Try to register a new in-flight computation.
+    //
+    // putIfAbsent guarantees atomicity and safe publication of the future
+    // (only one thread can successfully install a new CompletableFuture for the given key),
+    // so that other threads will observe a fully constructed CompletableFuture.
+    //
+    // The winning thread becomes the "owner" responsible for executing the supplier,
+    // while other threads will observe the existing future and wait for its result.
+    CompletableFuture<Payment> newFuture = new CompletableFuture<>();
+    CompletableFuture<Payment> existing = idempotencyMap.putIfAbsent(key, newFuture);
+
+    if (existing == null) {
+      // This thread is responsible for executing the supplier
+      try {
+        Payment result = supplier.get();
+
+        // Ensure shared state is published before completing the future.
+        // Due to the happens-before guarantee between complete() and join(),
+        // all threads unblocked by join() will observe this write.
+        payments.put(result.getId(), result);
+
+        newFuture.complete(result);
+        return result;
+
+      } catch (Exception e) {
+        newFuture.completeExceptionally(e);
+        throw e;
+
+      } finally {
+        // Cleanup to avoid memory leak.
+        //
+        // Trade-off:
+        // - Removing the key allows the map to stay bounded
+        // - However, it introduces a race window where the same key may be processed again
+        //   if a new request arrives after completion
+        //
+        // Therefore, this implementation guarantees:
+        // - In-flight deduplication (only one execution at a time)
+        // But NOT:
+        // - Strict idempotency across time
+        idempotencyMap.remove(key);
+      }
+    }
+
+    // Other threads wait for the existing computation
     try {
-      Payment result = supplier.get();
-      future.complete(result);
-      payments.put(result.getId(), result);
-      return result;
-    } catch (Exception e) {
-      future.completeExceptionally(e);
-      idempotencyMap.remove(key); // 失败允许重试
-      throw e;
+      // join:
+      // - Waits for the computation to complete and returns the result of CompletableFuture<Payment>
+      // - Wraps any exception into CompletionException (including TimeoutException)
+      // orTimeout:
+      // - Applies only to the waiting thread (if the waiting threads' waiting time exceeds the TIMEOUT_MS), not the execution thread
+      // - Does NOT cancel or interrupt the underlying computation
+      // - The execution thread may still complete successfully after timeout
+      return existing.orTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS).join();
+    } catch (CompletionException e) {
+      throw unwrap(e);
     }
+  }
+
+  /**
+   * Unwrap CompletionException to expose the original cause.
+   */
+  private RuntimeException unwrap(CompletionException e) {
+    Throwable cause = e.getCause();
+
+    if (cause instanceof TimeoutException) {
+      return new RuntimeException("Payment processing timed out after " + TIMEOUT_MS + " ms", cause);
+    }
+
+    if (cause instanceof RuntimeException) {
+      return (RuntimeException) cause;
+    }
+
+    return new RuntimeException(cause);
   }
 }
