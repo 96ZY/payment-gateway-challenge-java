@@ -58,40 +58,45 @@ public class PaymentGatewayService {
    * @return The payment response.
    */
   public PaymentResponse processPayment(CreatePaymentRequest request, String idempotencyKey) {
-    // Check idempotency
-    Optional<Payment> existing = paymentsRepository.findByIdempotencyKey(idempotencyKey);
-    if (existing.isPresent()) {
-      LOG.info("Idempotent request hit: key={}", idempotencyKey);
-      return PaymentMapper.toResponse(existing.get());
+
+    if (idempotencyKey == null || idempotencyKey.isBlank()) {
+      throw new IllegalArgumentException("Idempotency key is required");
     }
 
-    // Step 1: Convert API request to domain model
-    Payment payment = PaymentMapper.toDomain(request);
+    Payment finalPayment = paymentsRepository.process(idempotencyKey, () -> {
 
-    // Step 2: Call bank simulator to authorize the payment
-    BankResponse bankResponse = bankClient.authorize(
-        request.getCardNumber(),
-        request.getCvv(),
-        request.getExpiryMonth(),
-        request.getExpiryYear(),
-        request.getAmount(),
-        Currency.from(request.getCurrency())
-    );
+      // Step 1: 构建 payment
+      Payment payment = PaymentMapper.toDomain(request);
 
-    // Step 3: Derive payment status from bank response
-    PaymentStatus status = bankResponse.isAuthorized()
-        ? PaymentStatus.AUTHORIZED
-        : PaymentStatus.DECLINED;
+      try {
+        // Step 2: 调 bank
+        BankResponse bankResponse = bankClient.authorize(
+            request.getCardNumber(),
+            request.getCvv(),
+            request.getExpiryMonth(),
+            request.getExpiryYear(),
+            request.getAmount(),
+            Currency.from(request.getCurrency())
+        );
 
-    // Step 4: Create a new immutable Payment with updated status and authorization code
-    Payment finalPayment = payment.withStatus(status).withAuthorization(bankResponse.getAuthorizationCode());
+        // Step 3: 状态
+        PaymentStatus status = bankResponse.isAuthorized()
+            ? PaymentStatus.AUTHORIZED
+            : PaymentStatus.DECLINED;
 
-    // Step 5: Persist the payment (domain object)
-    paymentsRepository.saveWithIdempotency(idempotencyKey, finalPayment);
+        Payment result = payment
+            .withStatus(status)
+            .withAuthorization(bankResponse.getAuthorizationCode());
 
-    LOG.info("Payment processed: id={}, status={}", finalPayment.getId(), status);
+        LOG.info("Payment processed: id={}, status={}", result.getId(), status);
 
-    // Step 6: Convert domain model to API response
+        return result;
+      } catch (Exception e) {
+        LOG.error("Bank call failed", e);
+        throw e;
+      }
+    });
+
     return PaymentMapper.toResponse(finalPayment);
   }
 }

@@ -1,5 +1,6 @@
 package com.checkout.payment.gateway.domain;
 
+import com.checkout.payment.gateway.util.CardUtil;
 import lombok.Getter;
 
 /**
@@ -35,7 +36,7 @@ public class Card {
       throw new IllegalArgumentException("Invalid card number");
     }
 
-    this.last4 = cardNumber.substring(cardNumber.length() - 4);
+    this.last4 = CardUtil.getLastFourDigits(cardNumber);
     this.expiryMonth = expiryMonth;
     this.expiryYear = expiryYear;
   }

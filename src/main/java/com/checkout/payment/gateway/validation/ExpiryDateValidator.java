@@ -1,8 +1,11 @@
 package com.checkout.payment.gateway.validation;
 
 import com.checkout.payment.gateway.model.api.CreatePaymentRequest;
+import com.checkout.payment.gateway.util.CardUtil;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.YearMonth;
 
@@ -13,6 +16,8 @@ import java.time.YearMonth;
  */
 public class ExpiryDateValidator implements
     ConstraintValidator<ValidExpiryDate, CreatePaymentRequest> {
+
+  private static final Logger LOG = LoggerFactory.getLogger(ExpiryDateValidator.class);
 
   /**
    * Validates the expiry date of a payment request.
@@ -45,10 +50,12 @@ public class ExpiryDateValidator implements
 
         return false;
       }
-
       return true;
-
     } catch (Exception e) {
+      LOG.info("Bank request. cardNumberLastFour: {}, expiryDate: {}, currency: {}, ",
+          CardUtil.getLastFourDigits(request.getCardNumber()),
+          request.getExpiryMonth() + "/" + request.getExpiryYear(),
+          request.getCurrency());
       return false;
     }
   }
