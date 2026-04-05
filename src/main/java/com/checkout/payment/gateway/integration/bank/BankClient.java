@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 /**
@@ -88,9 +89,12 @@ public class BankClient {
           response.getAuthorizationCode());
 
       return response;
-    } catch (Exception e) { // Catch all exceptions to prevent external failures from propagating upstream
-      LOG.error("Error calling bank simulator", e);
-      return FAILED;
+    } catch (RestClientException e) {
+      LOG.error("Bank service unavailable", e);
+      throw new RuntimeException("Payment processing temporarily unavailable", e);
+    } catch (Exception e) {
+      LOG.error("Unexpected error", e);
+      return FAILED;  // Only for unknown errors
     }
   }
 

@@ -7,25 +7,21 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 
 /**
- * An in-memory idempotency mechanism that ensures
- * in-flight request deduplication using ConcurrentHashMap and CompletableFuture.
+ * An in-memory idempotency mechanism that ensures in-flight request deduplication using
+ * ConcurrentHashMap and CompletableFuture.
  * <p>
- * Key properties:
- * - Only one in-flight execution per idempotency key
- * - Concurrent callers share the same computation result
- * - Avoids explicit locking via CAS-based coordination
+ * Key properties: - Only one in-flight execution per idempotency key - Concurrent callers share the
+ * same computation result - Avoids explicit locking via CAS-based coordination
  * <p>
- * Limitations:
- * - Only suitable for single-instance deployments
- * - Does not guarantee strict idempotency across time
- * - Does not cancel underlying execution on timeout
+ * Limitations: - Only suitable for single-instance deployments - Does not guarantee strict
+ * idempotency across time - Does not cancel underlying execution on timeout
  */
 @Repository
 public class PaymentsRepository {
@@ -49,8 +45,8 @@ public class PaymentsRepository {
   /**
    * Retrieves a previously processed payment by its unique ID.
    * <p>
-   * This is a simple read operation backed by ConcurrentHashMap,
-   * providing thread-safe and efficient concurrent access with O(1) lookup.
+   * This is a simple read operation backed by ConcurrentHashMap, providing thread-safe and
+   * efficient concurrent access with O(1) lookup.
    *
    * @param id the unique identifier of the payment
    * @return an Optional containing the payment if present, otherwise empty
@@ -83,13 +79,6 @@ public class PaymentsRepository {
    *       {@code complete()} and {@code join()}</li>
    * </ul>
    *
-   * <p><b>Timeout behavior:</b>
-   * <ul>
-   *   <li>Waiting threads time out after {@code TIMEOUT_MS}</li>
-   *   <li>Timeout does <b>not</b> cancel or interrupt the underlying execution</li>
-   *   <li>The owner thread may still complete successfully after timeout</li>
-   * </ul>
-   *
    * <p><b>Trade-offs:</b>
    * <ul>
    *   <li>Does not guarantee strict idempotency across time (due to key removal)</li>
@@ -97,8 +86,8 @@ public class PaymentsRepository {
    *   <li>Suitable for single-instance deployments only</li>
    * </ul>
    *
-   * @param key       idempotency key identifying the request
-   * @param supplier  computation that produces the payment result
+   * @param key      idempotency key identifying the request
+   * @param supplier computation that produces the payment result
    * @return the processed payment
    * @throws RuntimeException if execution fails or times out
    */
@@ -107,7 +96,6 @@ public class PaymentsRepository {
     if (key == null || supplier == null) {
       throw new IllegalArgumentException("key and supplier must not be null");
     }
-
 
     // Try to register a new in-flight computation.
     //
@@ -121,7 +109,7 @@ public class PaymentsRepository {
     CompletableFuture<Payment> existing = idempotencyMap.putIfAbsent(key, newFuture);
 
     if (existing == null) {
-      // This thread is responsible for executing the supplier
+      // Owner thread executes supplier
       try {
         Payment result = supplier.get();
 
@@ -153,35 +141,31 @@ public class PaymentsRepository {
       }
     }
 
-    // Other threads wait for the existing computation
     try {
-      // join:
-      // - Waits for the computation to complete and returns the result of CompletableFuture<Payment>
-      // - Wraps any exception into CompletionException (including TimeoutException)
-      // orTimeout:
-      // - Applies only to the waiting thread (if the waiting threads' waiting time exceeds the TIMEOUT_MS), not the execution thread
-      // - Does NOT cancel or interrupt the underlying computation
-      // - The execution thread may still complete successfully after timeout
-      return existing.orTimeout(TIMEOUT_MS, TimeUnit.MILLISECONDS).join();
-    } catch (CompletionException e) {
+      // Other threads wait for owner execution
+      return existing.get(TIMEOUT_MS, TimeUnit.MILLISECONDS);
+    } catch (TimeoutException e) {
+      throw new RuntimeException("Payment processing timed out after " + TIMEOUT_MS + " ms", e);
+    } catch (ExecutionException e) {
       throw unwrap(e);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new RuntimeException("Payment processing interrupted", e);
     }
   }
 
   /**
-   * Unwrap CompletionException to expose the original cause.
+   * Unwraps {@link ExecutionException} to expose the original cause.
+   *
+   * @param e ExecutionException to unwrap
+   * @return the original cause as RuntimeException
    */
-  private RuntimeException unwrap(CompletionException e) {
+  private RuntimeException unwrap(ExecutionException e) {
     Throwable cause = e.getCause();
-
-    if (cause instanceof TimeoutException) {
-      return new RuntimeException("Payment processing timed out after " + TIMEOUT_MS + " ms", cause);
+    if (cause == null) {
+      return new RuntimeException("Unknown execution exception", e);
     }
-
-    if (cause instanceof RuntimeException) {
-      return (RuntimeException) cause;
-    }
-
-    return new RuntimeException(cause);
+    return cause instanceof RuntimeException ? (RuntimeException) cause
+        : new RuntimeException(cause);
   }
 }
