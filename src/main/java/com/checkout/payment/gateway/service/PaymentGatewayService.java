@@ -46,13 +46,6 @@ public class PaymentGatewayService {
   /**
    * Process a payment request from the API layer.
    *
-   * Flow:
-   * 1. Map request DTO to domain model
-   * 2. Call external bank service for authorization
-   * 3. Update payment status based on bank response
-   * 4. Persist the domain object
-   * 5. Map domain model to API response
-   *
    * @param request The payment request to process.
    * @param idempotencyKey The idempotency key for the request.
    * @return The payment response.
