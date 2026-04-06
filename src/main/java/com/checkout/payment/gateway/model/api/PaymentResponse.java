@@ -73,7 +73,12 @@ public class PaymentResponse {
       response.setCardNumberLastFour(request.getCardNumber() != null ? CardUtil.getLastFourDigits(request.getCardNumber()) : null);
       response.setExpiryMonth(request.getExpiryMonth() != null ? request.getExpiryMonth() : 0);
       response.setExpiryYear(request.getExpiryYear() != null ? request.getExpiryYear() : 0);
-      response.setCurrency(request.getCurrency() != null ? Currency.from(request.getCurrency()) : null);
+      try {
+        response.setCurrency(request.getCurrency() != null ? Currency.from(request.getCurrency()) : null);
+      } catch (Exception e) {
+        // invalid currency
+        response.setCurrency(null);
+      }
       response.setAmount(request.getAmount());
     }
 

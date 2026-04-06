@@ -30,7 +30,7 @@ public class CommonExceptionHandler {
   @ExceptionHandler(EventProcessingException.class)
   public ResponseEntity<ErrorResponse> handleException(EventProcessingException ex) {
     LOG.error("Exception happened", ex);
-    return new ResponseEntity<>(new ErrorResponse("Payment not found"),
+    return new ResponseEntity<>(new ErrorResponse(ex.getMessage()),
         HttpStatus.NOT_FOUND);
   }
 

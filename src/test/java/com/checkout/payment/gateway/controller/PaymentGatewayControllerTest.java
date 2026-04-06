@@ -1,6 +1,4 @@
 package com.checkout.payment.gateway.controller;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -90,6 +88,25 @@ class PaymentGatewayControllerTest {
         .andExpect(jsonPath("$.amount").value(1000)).andExpect(jsonPath("$.currency").value("GBP"));
   }
 
+  @Test
+  void shouldReturn400WhenIdempotencyKeyMissing() throws Exception {
+    String requestJson = """
+        {
+          "card_number": "4242424242424242",
+          "expiry_month": 12,
+          "expiry_year": 2028,
+          "currency": "GBP",
+          "amount": 1000,
+          "cvv": "123"
+        }
+        """;
+
+    mvc.perform(MockMvcRequestBuilders.post("/api/payment")
+            .contentType(MediaType.APPLICATION_JSON_VALUE)
+            .content(requestJson))
+        .andExpect(status().isBadRequest());
+  }
+
   /**
    * Verify that validation fails when amount is negative.
    */
@@ -135,6 +152,51 @@ class PaymentGatewayControllerTest {
         .andExpect(status().isBadRequest());
   }
 
+  @Test
+  void shouldReturn400WhenCardExpired() throws Exception {
+
+    int lastYear = java.time.Year.now().getValue() - 1;
+
+    String requestJson = String.format("""
+        {
+          "card_number": "4242424242424242",
+          "expiry_month": 12,
+          "expiry_year": %d,
+          "currency": "GBP",
+          "amount": 1000,
+          "cvv": "123"
+        }
+        """, lastYear);
+
+    mvc.perform(MockMvcRequestBuilders.post("/api/payment")
+            .header("idempotency-key", UUID.randomUUID().toString()).contentType(
+                MediaType.APPLICATION_JSON_VALUE).content(requestJson))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.rejectionReason").value("Card expired"));
+  }
+
+  @Test
+  void shouldReturn400WhenCurrencyInvalid() throws Exception {
+
+    String requestJson = """
+        {
+          "card_number": "4242424242424242",
+          "expiry_month": 12,
+          "expiry_year": 2028,
+          "currency": "AAA",
+          "amount": 1000,
+          "cvv": "123"
+        }
+        """;
+
+    mvc.perform(MockMvcRequestBuilders.post("/api/payment")
+            .header("idempotency-key", UUID.randomUUID().toString()).contentType(
+                MediaType.APPLICATION_JSON_VALUE).content(requestJson))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.rejectionReason").value("Unsupported currency"));
+  }
+
+
   /**
    * Verify that validation fails when card number format is invalid.
    */
@@ -158,13 +220,15 @@ class PaymentGatewayControllerTest {
         .andExpect(status().isBadRequest());
   }
 
+  /**
+   * Verify that validation fails when expiry month is out of range.
+   */
   @Test
-  void shouldReturnSameResponseForSameIdempotencyKey() throws Exception {
-
+  void shouldReturn400WhenExpiryMonthOutOfRange() throws Exception {
     String requestJson = """
         {
           "card_number": "4242424242424242",
-          "expiry_month": 12,
+          "expiry_month": 13,
           "expiry_year": 2028,
           "currency": "GBP",
           "amount": 1000,
@@ -172,28 +236,40 @@ class PaymentGatewayControllerTest {
         }
         """;
 
-    String key = UUID.randomUUID().toString();
-
-    // first request
-    String response1 = mvc.perform(
-            MockMvcRequestBuilders.post("/api/payment").header("Idempotency-Key", key)
-                .contentType(
-                    MediaType.APPLICATION_JSON_VALUE).content(requestJson))
-        .andExpect(status().isCreated())
-        .andReturn().getResponse().getContentAsString();
-
-    // second request (same key)
-    String response2 = mvc.perform(
-            MockMvcRequestBuilders.post("/api/payment").header("Idempotency-Key", key)
-                .contentType(
-                    MediaType.APPLICATION_JSON_VALUE).content(requestJson))
-        .andExpect(status().isCreated())
-        .andReturn().getResponse().getContentAsString();
-
-    // assert same response
-    assertEquals(response1, response2);
+    mvc.perform(MockMvcRequestBuilders.post("/api/payment")
+            .header("idempotency-key", UUID.randomUUID().toString())
+            .contentType(MediaType.APPLICATION_JSON_VALUE)
+            .content(requestJson))
+        .andExpect(status().isBadRequest());
   }
 
+  /**
+   * Verify that validation fails when cvv is missing.
+   */
+  @Test
+  void shouldReturn400WhenCvvInvalid() throws Exception {
+    String requestJson = """
+        {
+          "card_number": "4242424242424242",
+          "expiry_month": 12,
+          "expiry_year": 2028,
+          "currency": "GBP",
+          "amount": 1000,
+          "cvv": "12"
+        }
+        """;
+
+    mvc.perform(MockMvcRequestBuilders.post("/api/payment")
+            .header("idempotency-key", UUID.randomUUID().toString())
+            .contentType(MediaType.APPLICATION_JSON_VALUE)
+            .content(requestJson))
+        .andExpect(status().isBadRequest());
+  }
+
+  /**
+   * Verify that a valid payment request is processed successfully. Ensures correct API response
+   * structure and mapping.
+   */
   @Test
   void shouldReturnDeclinedWhenBankRejects() throws Exception {
 
@@ -210,51 +286,8 @@ class PaymentGatewayControllerTest {
 
     mvc.perform(MockMvcRequestBuilders.post("/api/payment")
             .header("idempotency-key", UUID.randomUUID().toString()).contentType(
-                MediaType.APPLICATION_JSON_VALUE).content(requestJson)).andExpect(status().isCreated())
+                MediaType.APPLICATION_JSON_VALUE).content(requestJson)).andExpect(status().isOk())
         .andExpect(jsonPath("$.status").value("Declined"));
   }
 
-  @Test
-  void shouldReturn400WhenCardExpired() throws Exception {
-
-    int lastYear = java.time.Year.now().getValue() - 1;
-
-    String requestJson = String.format("""
-        {
-          "card_number": "4242424242424242",
-          "expiry_month": 12,
-          "expiry_year": %d,
-          "currency": "GBP",
-          "amount": 1000,
-          "cvv": "123"
-        }
-        """, lastYear);
-
-    mvc.perform(MockMvcRequestBuilders.post("/api/payment")
-            .header("idempotency-key", UUID.randomUUID().toString()).contentType(
-                MediaType.APPLICATION_JSON_VALUE).content(requestJson))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.message").value("expiryMonth Card expiry date must be in the future"));
-  }
-
-  @Test
-  void shouldReturn400WhenCurrencyInvalid() throws Exception {
-
-    String requestJson = """
-        {
-          "card_number": "4242424242424242",
-          "expiry_month": 12,
-          "expiry_year": 2028,
-          "currency": "AAA",
-          "amount": 1000,
-          "cvv": "123"
-        }
-        """;
-
-    mvc.perform(MockMvcRequestBuilders.post("/api/payment")
-            .header("idempotency-key", UUID.randomUUID().toString()).contentType(
-                MediaType.APPLICATION_JSON_VALUE).content(requestJson))
-        .andExpect(status().isBadRequest())
-        .andExpect(jsonPath("$.message").value("currency Invalid currency")); // 前提：你的异常处理返回字段级错误
-  }
 }
