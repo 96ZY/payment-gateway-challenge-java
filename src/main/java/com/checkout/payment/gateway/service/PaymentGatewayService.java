@@ -16,13 +16,22 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+/**
+ * Service layer for the payment gateway.
+ */
 @Service
 public class PaymentGatewayService {
 
   private static final Logger LOG = LoggerFactory.getLogger(PaymentGatewayService.class);
 
+  /**
+   * Repository for payments.
+   */
   private final PaymentsRepository paymentsRepository;
 
+  /**
+   * Client for the bank integration.
+   */
   private final BankClient bankClient;
 
   public PaymentGatewayService(PaymentsRepository paymentsRepository, BankClient bankClient) {

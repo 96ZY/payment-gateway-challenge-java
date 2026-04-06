@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  * Provides endpoints for:
  * <ul>
  *   <li>Retrieving payment details by ID</li>
- *   <li>Processing new payments with idempotency support</li>
+ *   <li>Processing new payments with in-flight idempotency support</li>
  * </ul>
  * <p>
  * Base path: {@code /api}
@@ -58,8 +58,7 @@ public class PaymentGatewayController {
   /**
    * Processes a new payment request.
    * <p>
-   * This endpoint supports idempotency through the {@code Idempotency-Key} header.
-   * Duplicate requests with the same key will return the original response.
+   * This endpoint supports in-flight idempotency through the {@code Idempotency-Key} header.
    *
    * @param idempotencyKey the idempotency key for the request (required)
    * @param createPaymentRequest the payment details

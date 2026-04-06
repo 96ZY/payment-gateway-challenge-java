@@ -32,15 +32,17 @@ public class PaymentsRepository {
   private final Map<UUID, Payment> payments = new ConcurrentHashMap<>();
 
   /**
-   * Tracks in-flight requests for idempotency. Key -> ongoing computation result
-   * (CompletableFuture)
+   * Tracks in-flight requests for idempotency.
+   * <p>
+   * id -> ongoing computation result(CompletableFuture)
    */
   private final Map<String, CompletableFuture<Payment>> idempotencyMap = new ConcurrentHashMap<>();
 
   /**
-   * Timeout for processing a payment (to avoid indefinite blocking).
+   * Maximum time (ms) that a concurrent caller will wait for an in-flight payment
+   * processing to complete before timing out.
    */
-  private static final long TIMEOUT_MS = 3000;
+  private static final long TIMEOUT_MS = 3000L;
 
   /**
    * Retrieves a previously processed payment by its unique ID.
