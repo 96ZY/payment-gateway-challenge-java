@@ -1,56 +1,60 @@
 package com.checkout.payment.gateway.model.api;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import jakarta.validation.constraints.*;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
 /**
- * Request DTO for creating a new payment.
- * <p>
- * Contains validation annotations to ensure data integrity:
+ * Request DTO for creating a payment.
+ *
+ * <p>This class defines the API contract for incoming payment requests.
+ * Only minimal validation is applied to ensure the request can be successfully parsed.</p>
+ *
+ * <p><b>Validation strategy:</b></p>
  * <ul>
- *   <li>Card number: 14-19 digits</li>
- *   <li>Expiry date: must be in the future</li>
- *   <li>CVV: 3-4 digits</li>
- *   <li>Amount: positive number</li>
- *   <li>Currency: must be a supported currency code</li>
+ *   <li><b>Technical validation</b> (e.g. missing fields, JSON/type parsing errors)
+ *       → HTTP 400 (ErrorResponse)</li>
+ *   <li><b>Business validation</b> (e.g. invalid card number, expiry date, currency, CVV, amount)
+ *       → PaymentResponse with status = REJECTED</li>
  * </ul>
+ *
+ * <p>Any request that can be successfully deserialized into this object is considered
+ * syntactically valid. All domain-specific validation rules are handled in the service layer
+ * and result in a <b>REJECTED</b> payment response if violated.</p>
+ *
+ * <p><b>Note:</b> Sensitive fields (card number, CVV) must not be logged or persisted in full.</p>
  */
 @Data
 public class CreatePaymentRequest {
 
-  /** Card number (14-19 digits). */
+  /** Card number (raw input, validated at service layer). */
   @JsonProperty("card_number")
   @NotBlank
-  @Pattern(regexp = "\\d{14,19}", message = "Card number must be 14-19 digits")
   private String cardNumber;
 
-  /** Expiry month (1-12). */
+  /** Expiry month (validated at service layer for range and date logic). */
   @JsonProperty("expiry_month")
   @NotNull
-  @Min(1)
-  @Max(12)
   private Integer expiryMonth;
 
-  /** Expiry year (4-digit format, e.g., 2024). */
+  /** Expiry year (validated at service layer). */
   @JsonProperty("expiry_year")
   @NotNull
   private Integer expiryYear;
 
-  /** Currency code (e.g., "USD", "GBP", "EUR"). */
+  /** Currency code (validated against supported values at service layer). */
   @JsonProperty("currency")
-  @NotNull
+  @NotBlank
   private String currency;
 
-  /** Amount in minor units (e.g., cents for USD). Must be positive. */
+  /** Amount in minor units (validated for positivity at service layer). */
   @JsonProperty("amount")
   @NotNull
-  @Positive
   private Long amount;
 
-  /** CVV/CVC security code (3-4 digits). */
+  /** CVV/CVC security code (validated at service layer). */
   @JsonProperty("cvv")
   @NotBlank
-  @Pattern(regexp = "\\d{3,4}")
   private String cvv;
 }

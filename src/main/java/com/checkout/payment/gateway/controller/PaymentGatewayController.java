@@ -62,7 +62,7 @@ public class PaymentGatewayController {
    *
    * @param idempotencyKey the idempotency key for the request (required)
    * @param createPaymentRequest the payment details
-   * @return ResponseEntity containing the payment result with HTTP 201 CREATED
+   * @return ResponseEntity containing the payment result
    */
   @PostMapping("/payment")
   public ResponseEntity<PaymentResponse> postPayment(@RequestHeader("Idempotency-Key") String idempotencyKey,
@@ -71,8 +71,7 @@ public class PaymentGatewayController {
 
     HttpStatus status = switch (response.getStatus()) {
       case AUTHORIZED -> HttpStatus.CREATED;
-      case DECLINED -> HttpStatus.OK;
-      case REJECTED -> HttpStatus.BAD_REQUEST;
+      case DECLINED, REJECTED -> HttpStatus.OK;
     };
     return ResponseEntity.status(status).body(response);
   }

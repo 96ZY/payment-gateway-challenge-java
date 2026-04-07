@@ -108,29 +108,6 @@ class PaymentGatewayControllerTest {
   }
 
   /**
-   * Verify that validation fails when amount is negative.
-   */
-  @Test
-  void shouldReturn400WhenAmountInvalid() throws Exception {
-
-    String requestJson = """
-        {
-          "card_number": "4242424242424242",
-          "expiry_month": 12,
-          "expiry_year": 2028,
-          "currency": "GBP",
-          "amount": -100,
-          "cvv": "123"
-        }
-        """;
-
-    mvc.perform(MockMvcRequestBuilders.post("/api/payment")
-            .header("idempotency-key", UUID.randomUUID().toString())
-            .contentType(MediaType.APPLICATION_JSON_VALUE).content(requestJson))
-        .andExpect(status().isBadRequest());
-  }
-
-  /**
    * Verify that validation fails when expiry month is missing.
    */
   @Test
@@ -152,8 +129,56 @@ class PaymentGatewayControllerTest {
         .andExpect(status().isBadRequest());
   }
 
+  /**
+   * Verify that validation fails when card number format is invalid.
+   */
   @Test
-  void shouldReturn400WhenCardExpired() throws Exception {
+  void shouldReturnInvalidCardNumberWhenCardNumberInvalid() throws Exception {
+
+    String requestJson = """
+        {
+          "card_number": "123",
+          "expiry_month": 12,
+          "expiry_year": 2028,
+          "currency": "GBP",
+          "amount": 1000,
+          "cvv": "123"
+        }
+        """;
+
+    mvc.perform(MockMvcRequestBuilders.post("/api/payment").header("idempotency-key", "1234567890")
+            .contentType(
+                MediaType.APPLICATION_JSON_VALUE).content(requestJson))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.rejectionReason").value("Invalid card number"));
+  }
+
+  /**
+   * Verify that validation fails when expiry month is out of range.
+   */
+  @Test
+  void shouldReturnInvalidExpiryMonthWhenExpiryMonthOutOfRange() throws Exception {
+    String requestJson = """
+        {
+          "card_number": "4242424242424242",
+          "expiry_month": 13,
+          "expiry_year": 2028,
+          "currency": "GBP",
+          "amount": 1000,
+          "cvv": "123"
+        }
+        """;
+
+    mvc.perform(MockMvcRequestBuilders.post("/api/payment")
+            .header("idempotency-key", UUID.randomUUID().toString())
+            .contentType(MediaType.APPLICATION_JSON_VALUE)
+            .content(requestJson))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.rejectionReason").value("Invalid expiry month"));
+  }
+
+  @Test
+  void shouldReturnCardExpiredWhenCardExpired() throws Exception {
 
     int lastYear = java.time.Year.now().getValue() - 1;
 
@@ -171,12 +196,12 @@ class PaymentGatewayControllerTest {
     mvc.perform(MockMvcRequestBuilders.post("/api/payment")
             .header("idempotency-key", UUID.randomUUID().toString()).contentType(
                 MediaType.APPLICATION_JSON_VALUE).content(requestJson))
-        .andExpect(status().isBadRequest())
+        .andExpect(status().isOk())
         .andExpect(jsonPath("$.rejectionReason").value("Card expired"));
   }
 
   @Test
-  void shouldReturn400WhenCurrencyInvalid() throws Exception {
+  void shouldReturnUnsupportedCurrencyWhenCurrencyInvalid() throws Exception {
 
     String requestJson = """
         {
@@ -192,62 +217,39 @@ class PaymentGatewayControllerTest {
     mvc.perform(MockMvcRequestBuilders.post("/api/payment")
             .header("idempotency-key", UUID.randomUUID().toString()).contentType(
                 MediaType.APPLICATION_JSON_VALUE).content(requestJson))
-        .andExpect(status().isBadRequest())
+        .andExpect(status().isOk())
         .andExpect(jsonPath("$.rejectionReason").value("Unsupported currency"));
   }
 
-
   /**
-   * Verify that validation fails when card number format is invalid.
+   * Verify that validation fails when amount is negative.
    */
   @Test
-  void shouldReturn400WhenCardNumberInvalid() throws Exception {
+  void shouldReturnInvalidAmountWhenAmountInvalid() throws Exception {
 
-    String requestJson = """
-        {
-          "card_number": "123",
-          "expiry_month": 12,
-          "expiry_year": 2028,
-          "currency": "GBP",
-          "amount": 1000,
-          "cvv": "123"
-        }
-        """;
-
-    mvc.perform(MockMvcRequestBuilders.post("/api/payment").header("idempotency-key", "1234567890")
-            .contentType(
-                MediaType.APPLICATION_JSON_VALUE).content(requestJson))
-        .andExpect(status().isBadRequest());
-  }
-
-  /**
-   * Verify that validation fails when expiry month is out of range.
-   */
-  @Test
-  void shouldReturn400WhenExpiryMonthOutOfRange() throws Exception {
     String requestJson = """
         {
           "card_number": "4242424242424242",
-          "expiry_month": 13,
+          "expiry_month": 12,
           "expiry_year": 2028,
           "currency": "GBP",
-          "amount": 1000,
+          "amount": -100,
           "cvv": "123"
         }
         """;
 
     mvc.perform(MockMvcRequestBuilders.post("/api/payment")
             .header("idempotency-key", UUID.randomUUID().toString())
-            .contentType(MediaType.APPLICATION_JSON_VALUE)
-            .content(requestJson))
-        .andExpect(status().isBadRequest());
+            .contentType(MediaType.APPLICATION_JSON_VALUE).content(requestJson))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.rejectionReason").value("Invalid amount"));
   }
 
   /**
    * Verify that validation fails when cvv is missing.
    */
   @Test
-  void shouldReturn400WhenCvvInvalid() throws Exception {
+  void shouldReturnInvalidCVVWhenCvvInvalid() throws Exception {
     String requestJson = """
         {
           "card_number": "4242424242424242",
@@ -263,7 +265,8 @@ class PaymentGatewayControllerTest {
             .header("idempotency-key", UUID.randomUUID().toString())
             .contentType(MediaType.APPLICATION_JSON_VALUE)
             .content(requestJson))
-        .andExpect(status().isBadRequest());
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.rejectionReason").value("Invalid CVV"));
   }
 
   /**
